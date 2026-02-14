@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yosemite Coloring Book — Page Picker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+  
+  header { background: #16213e; padding: 24px 32px; border-bottom: 2px solid #0f3460; }
+  header h1 { font-size: 24px; color: #e8d5b7; letter-spacing: 0.5px; }
+  header p { color: #8899aa; margin-top: 4px; font-size: 14px; }
+  
+  .toolbar { background: #16213e; padding: 16px 32px; display: flex; gap: 16px; align-items: center; border-bottom: 1px solid #0f3460; position: sticky; top: 0; z-index: 10; }
+  .toolbar .count { color: #e8d5b7; font-weight: 600; }
+  .toolbar button { background: #0f3460; color: #e8d5b7; border: 1px solid #e8d5b7; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
+  .toolbar button:hover { background: #e8d5b7; color: #1a1a2e; }
+  .toolbar button.submit { background: #2d6a4f; border-color: #52b788; color: #d8f3dc; }
+  .toolbar button.submit:hover { background: #52b788; color: #1a1a2e; }
+  .toolbar button.submit:disabled { opacity: 0.4; cursor: not-allowed; }
+  
+  .scenes { padding: 24px 32px; display: flex; flex-direction: column; gap: 40px; }
+  
+  .scene { background: #16213e; border-radius: 12px; overflow: hidden; border: 1px solid #0f3460; }
+  .scene-header { padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #0f3460; }
+  .scene-header h2 { font-size: 18px; color: #e8d5b7; }
+  .scene-header .badge { font-size: 12px; padding: 4px 10px; border-radius: 20px; background: #0f3460; color: #8899aa; }
+  
+  .versions { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .version { position: relative; cursor: pointer; transition: all 0.2s; border: 3px solid transparent; }
+  .version:first-child { border-right: 1px solid #0f3460; }
+  .version:hover { opacity: 0.9; }
+  .version.selected { border-color: #52b788; }
+  .version.selected::after { content: '✓ Selected'; position: absolute; top: 12px; right: 12px; background: #2d6a4f; color: #d8f3dc; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+  .version img { width: 100%; display: block; background: #fff; }
+  .version .label { padding: 10px 16px; text-align: center; font-size: 13px; color: #8899aa; background: #111827; }
+  .version .label span { font-weight: 600; color: #ccc; }
+  
+  .version.loading img { display: none; }
+  .version.loading::before { content: '⏳ Generating...'; display: flex; align-items: center; justify-content: center; min-height: 400px; color: #8899aa; font-size: 16px; background: #111827; }
+  
+  .result-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; }
+  .result-overlay.show { display: flex; }
+  .result-box { background: #16213e; border-radius: 12px; padding: 32px; max-width: 500px; text-align: center; border: 1px solid #0f3460; }
+  .result-box h2 { color: #e8d5b7; margin-bottom: 16px; }
+  .result-box pre { background: #111827; padding: 16px; border-radius: 8px; text-align: left; font-size: 13px; color: #52b788; margin: 16px 0; white-space: pre-wrap; }
+  .result-box button { background: #0f3460; color: #e8d5b7; border: 1px solid #e8d5b7; padding: 10px 24px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  
+  @media (max-width: 768px) {
+    .versions { grid-template-columns: 1fr; }
+    .scenes { padding: 12px; }
+    header, .toolbar { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏔️ Yosemite Coloring Book — Page Picker</h1>
+  <p>Click to select your preferred version for each scene. V1 = original style, V2 = no-border style.</p>
+</header>
+
+<div class="toolbar">
+  <span class="count" id="count">0 of 10 selected</span>
+  <button onclick="selectAll('v1')">Select All V1</button>
+  <button onclick="selectAll('v2')">Select All V2</button>
+  <button onclick="clearAll()">Clear All</button>
+  <button class="submit" id="submitBtn" onclick="submitChoices()" disabled>✅ Submit Selections</button>
+</div>
+
+<div class="scenes" id="scenes"></div>
+
+<div class="result-overlay" id="resultOverlay">
+  <div class="result-box">
+    <h2>✅ Selections Saved!</h2>
+    <p style="color:#8899aa;margin-bottom:12px;">Copy this and send to Lulubot:</p>
+    <pre id="resultText"></pre>
+    <button onclick="copyResult()">📋 Copy to Clipboard</button>
+  </div>
+</div>
+
+<script>
+const SCENES = [
+  { id: "01-half-dome", name: "Half Dome", category: "Landmark" },
+  { id: "02-black-bear", name: "Black Bear", category: "Wildlife" },
+  { id: "03-yosemite-falls", name: "Yosemite Falls", category: "Landmark" },
+  { id: "04-giant-sequoia", name: "Giant Sequoia", category: "Flora" },
+  { id: "05-stellers-jay", name: "Steller's Jay", category: "Wildlife" },
+  { id: "06-el-capitan", name: "El Capitan", category: "Landmark" },
+  { id: "07-wildflower-meadow", name: "Wildflower Meadow", category: "Flora" },
+  { id: "08-mule-deer", name: "Mule Deer", category: "Wildlife" },
+  { id: "09-bridalveil-fall", name: "Bridalveil Fall", category: "Landmark" },
+  { id: "10-great-gray-owl", name: "Great Gray Owl", category: "Wildlife" },
+];
+
+const selections = {};
+
+function render() {
+  const container = document.getElementById('scenes');
+  container.innerHTML = SCENES.map(scene => `
+    <div class="scene">
+      <div class="scene-header">
+        <h2>${scene.name}</h2>
+        <span class="badge">${scene.category}</span>
+      </div>
+      <div class="versions">
+        <div class="version ${selections[scene.id] === 'v1' ? 'selected' : ''}" 
+             id="${scene.id}-v1" onclick="select('${scene.id}', 'v1')">
+          <img src="v1/${scene.id}.png" alt="${scene.name} V1" 
+               onerror="this.parentElement.classList.add('loading')">
+          <div class="label"><span>V1</span> — Original</div>
+        </div>
+        <div class="version ${selections[scene.id] === 'v2' ? 'selected' : ''}" 
+             id="${scene.id}-v2" onclick="select('${scene.id}', 'v2')">
+          <img src="v2/${scene.id}.png" alt="${scene.name} V2">
+          <div class="label"><span>V2</span> — No Border</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  updateCount();
+}
+
+function select(sceneId, version) {
+  if (selections[sceneId] === version) {
+    delete selections[sceneId];
+  } else {
+    selections[sceneId] = version;
+  }
+  render();
+}
+
+function selectAll(version) {
+  SCENES.forEach(s => selections[s.id] = version);
+  render();
+}
+
+function clearAll() {
+  Object.keys(selections).forEach(k => delete selections[k]);
+  render();
+}
+
+function updateCount() {
+  const n = Object.keys(selections).length;
+  document.getElementById('count').textContent = `${n} of 10 selected`;
+  document.getElementById('submitBtn').disabled = n < 10;
+}
+
+function submitChoices() {
+  const lines = SCENES.map(s => {
+    const v = selections[s.id] || '?';
+    return `${s.name}: ${v.toUpperCase()}`;
+  });
+  const text = "Coloring Book Selections:\n" + lines.join("\n");
+  document.getElementById('resultText').textContent = text;
+  document.getElementById('resultOverlay').classList.add('show');
+}
+
+function copyResult() {
+  const text = document.getElementById('resultText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    document.querySelector('.result-box button').textContent = '✅ Copied!';
+    setTimeout(() => {
+      document.querySelector('.result-box button').textContent = '📋 Copy to Clipboard';
+    }, 2000);
+  });
+}
+
+document.getElementById('resultOverlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
+});
+
+render();
+
+// Auto-refresh v1 images every 10s until all loaded
+let refreshInterval = setInterval(() => {
+  document.querySelectorAll('.version.loading img').forEach(img => {
+    img.src = img.src.split('?')[0] + '?t=' + Date.now();
+    img.onerror = () => img.parentElement.classList.add('loading');
+    img.onload = () => img.parentElement.classList.remove('loading');
+  });
+  if (!document.querySelector('.version.loading')) clearInterval(refreshInterval);
+}, 10000);
+</script>
+
+</body>
+</html>
